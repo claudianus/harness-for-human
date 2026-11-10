@@ -1,0 +1,14 @@
+{
+  "name": "휴먼 하네스",
+  "short_name": "하네스",
+  "description": "AI 하네스의 구조를 사람에게 옮긴 개인 운영 시스템",
+  "start_url": "./#/today",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f4ef",
+  "theme_color": "#1f6f5c",
+  "lang": "ko",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
