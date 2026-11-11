@@ -27,28 +27,74 @@
 3. **피드백은 빠르게.** 세션마다 시작할 때 정한 기준으로 결과를 확인한다.
 4. **점점 줄인다.** 몸에 익은 규칙과 습관은 졸업시킨다. 하네스는 줄어들어야 한다.
 
-## 실행
+## 기술 스택
 
-빌드 과정이 없다. 정적 파일 서버로 띄우면 된다.
+| 영역 | 사용 |
+|---|---|
+| 빌드 | Vite 8 |
+| UI | React 19 + TypeScript 6 |
+| 라우팅 | React Router 7 (`HashRouter`, GitHub Pages에서 새로고침·딥링크가 그대로 동작) |
+| 상태 | 직접 만든 단일 저장소 + Immer, React에는 `useSyncExternalStore`로 연결 |
+| PWA | vite-plugin-pwa (`injectManifest`) + Workbox 프리캐시, 오프라인 실행·자동 업데이트 |
+| 알림 | Notifications API + 서비스 워커 `showNotification` (로컬 알림) |
+| 테스트·검사 | Vitest + jsdom, ESLint (typescript-eslint, react-hooks) |
+| 배포 | GitHub Actions → GitHub Pages |
+
+## 개발
+
+Node 22.12 이상이 필요하다.
 
 ```bash
-python3 -m http.server 5173
+npm install
+npm run dev        # 개발 서버 (http://localhost:5173)
+npm test           # 저장소 단위 테스트
+npm run lint
+npm run build      # 타입 검사 + dist/ 생성
+npm run preview    # 빌드 결과 확인 (서비스 워커는 빌드 결과에서만 동작)
 ```
 
-브라우저에서 <http://localhost:5173> 을 연다. 휴대폰에서는 같은 와이파이에서 컴퓨터 IP로 접속하거나, 정적 호스팅(GitHub Pages, Netlify 등)에 올린 뒤 "홈 화면에 추가"하면 앱처럼 쓸 수 있다.
+## GitHub Pages 배포
+
+1. GitHub에 저장소를 만들고 이 코드를 `main` 브랜치로 푸시한다.
+2. 저장소 **Settings → Pages → Source**를 **GitHub Actions**로 바꾼다 (한 번만).
+3. 이후 `main`에 푸시할 때마다 `.github/workflows/deploy.yml`이 린트 → 테스트 → 빌드 → 배포를 한다.
+
+주소는 `https://<사용자명>.github.io/<저장소명>/` 이다. 빌드가 상대 경로(`base: './'`)라서 저장소 이름이 무엇이든 설정을 바꿀 필요가 없다. 휴대폰에서 이 주소를 열고 "홈 화면에 추가"하면 앱처럼 쓸 수 있다.
+
+## 알림
+
+설정 → 알림에서 허용하고 켠다.
+
+- **집중 시간 종료**: 세션 시간이 끝나면 알린다.
+- **아침 계획 / 하루 종료**: 정한 시각에, 아직 안 했을 때만 알린다. 시각을 비우면 꺼진다.
+
+앱이 화면에 보이면 소리와 토스트로, 다른 창에 가려져 있으면 시스템 알림으로 온다. 알림을 누르면 해당 화면이 열린다.
+
+**한계:** 서버가 없는 로컬 알림이라 앱이 열려 있거나 백그라운드에 살아 있을 때만 온다. 앱을 완전히 닫으면 오지 않고, 휴대폰은 백그라운드 앱을 금방 멈추므로 늦거나 빠질 수 있다. 아이폰·아이패드는 홈 화면에 추가한 앱에서만 알림을 켤 수 있다(iOS 16.4 이상). 앱을 닫아도 오는 진짜 푸시는 발송 서버(예: Cloudflare Workers, Supabase)가 필요하다.
 
 ## 데이터
 
-모든 기록은 브라우저의 localStorage에만 저장된다. 서버로 보내지 않는다. 설정 화면에서 JSON으로 백업하고 복원할 수 있다.
+모든 기록은 브라우저의 localStorage(`human-harness.v1`)에만 저장된다. 서버로 보내지 않는다. 설정 화면에서 JSON으로 백업하고 복원할 수 있다. 바닐라 버전(v1)의 기록과 백업 파일도 그대로 열린다.
+
+- 저장은 0.3초 모아서 한 번에, 탭을 닫거나 가릴 때는 즉시.
+- 여러 탭(또는 설치한 앱 창)을 열어도 서로 덮어쓰지 않는다.
+- 저장에 실패하면 화면 위에 배너가 뜬다.
+- 깨진 데이터는 덮어쓰기 전에 `human-harness.v1.corrupt-*` 키로 따로 보관한다.
 
 ## 구조
 
 ```
-index.html            앱 셸 (상단바, 하단 탭, 캡처 시트)
-styles.css            디자인 토큰, 라이트/다크 모드
-js/store.js           단일 저장소, 모든 모듈이 공유
-js/ui.js              DOM 헬퍼와 공용 컴포넌트
-js/app.js             라우터, 전역 캡처, 세션 타이머
-js/modules/*.js       화면 하나 = 하네스 층 하나
-sw.js                 오프라인 지원 (네트워크 우선)
+index.html                 HTML 셸
+vite.config.ts             빌드, PWA 매니페스트
+public/                    아이콘
+src/main.tsx               진입점, 라우터, 서비스 워커 등록
+src/App.tsx                상단바, 하단 탭, 캡처 시트, 세션 타이머, 알림 스케줄러
+src/sw.ts                  서비스 워커 (프리캐시, 알림 클릭)
+src/store/model.ts         데이터 타입, 가져오기 정규화, 날짜 도우미 (순수 함수)
+src/store/store.ts         저장소, 저장·탭 동기화, React 훅
+src/lib/                   알림, 소리, 시간 형식, 작은 UI 상태
+src/components/            공용 컴포넌트
+src/screens/*.tsx          화면 하나 = 하네스 층 하나
+src/test/                  단위 테스트
+.github/workflows/         GitHub Pages 배포
 ```

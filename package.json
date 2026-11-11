@@ -1,0 +1,46 @@
+{
+  "name": "human-harness",
+  "private": true,
+  "version": "2.0.0",
+  "description": "AI 하네스의 구조를 사람에게 옮긴 개인 운영 시스템",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && tsc --noEmit -p tsconfig.sw.json && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.sw.json"
+  },
+  "dependencies": {
+    "immer": "11.2.9",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-router": "7.18.5",
+    "workbox-core": "7.4.1",
+    "workbox-precaching": "7.4.1",
+    "workbox-routing": "7.4.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "eslint": "10.13.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
+    "jsdom": "30.1.3",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "8.3.5",
+    "vite-plugin-pwa": "2.0.0",
+    "vitest": "5.0.5",
+    "workbox-build": "7.4.1",
+    "workbox-window": "7.4.1"
+  }
+}

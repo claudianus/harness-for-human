@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "createdAt": 1762700000000,
+  "settings": { "modules": { "today": true, "focus": true, "inbox": true, "think": true, "rhythm": false, "manual": true, "review": true }, "focusMin": 50, "onboarded": true },
+  "days": {
+    "2026-11-10": { "intention": "기획서 초안", "top3": [{ "id": "a1", "text": "목차", "done": true }], "ifThen": [{ "id": "i1", "if": "졸리면", "then": "걷기" }], "shutdown": { "done": true, "win": "초안 완성", "tomorrow": "리뷰 요청" }, "sleep": 7, "moved": true }
+  },
+  "sessions": [
+    { "id": "s1", "goal": "카피 초안", "criteria": "헤드라인 3안", "firstAction": "경쟁사 열기", "plannedMin": 25, "startAt": 1762750000000, "status": "done", "endAt": 1762751500000, "verdict": "partial", "reflection": "자료 찾느라", "nextStep": "본문 쓰기" }
+  ],
+  "captures": [{ "id": "c1", "text": "우유 사기", "at": 1762750600000, "status": "inbox", "sessionId": "s1" }],
+  "rules": [{ "id": "r1", "text": "자료 수집은 세션 전에", "trigger": "", "status": "active", "source": "session", "createdAt": 1762751500000 }],
+  "logs": [{ "id": "l1", "at": 1762740000000, "day": "2026-11-10", "hour": 10, "energy": 4 }],
+  "habits": [{ "id": "h1", "anchor": "커피", "tiny": "스쿼트 2개", "status": "active", "done": { "2026-11-10": true }, "createdAt": 1762700000000 }],
+  "thinks": [{ "id": "t1", "tool": "whys", "data": { "problem": "밤샘", "whys": ["a", "", "", "", ""], "action": "" }, "at": 1762700000000, "updatedAt": 1762700000000 }],
+  "reviews": [{ "id": "v1", "week": "2026-11-03", "at": 1762700000000, "wins": "w", "misses": "m", "change": "메신저 끄기", "stats": { "sessions": 3 } }]
+}

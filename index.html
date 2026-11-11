@@ -1,47 +1,21 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>휴먼 하네스</title>
-  <meta name="description" content="AI 하네스의 구조를 사람에게 옮긴 개인 운영 시스템">
-  <meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#141513" media="(prefers-color-scheme: dark)">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="하네스">
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icon.svg">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="styles.css">
+  <meta name="description" content="AI 하네스의 구조를 사람에게 옮긴 개인 운영 시스템" />
+  <meta name="theme-color" content="#f5f4ef" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#131412" media="(prefers-color-scheme: dark)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="하네스" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="#/today"><span class="brand-mark" aria-hidden="true"></span>휴먼 하네스</a>
-    <div class="top-actions">
-      <button type="button" id="session-pill" class="pill" hidden title="집중 세션으로"></button>
-      <button type="button" id="capture-btn" class="btn primary sm capture-btn" title="캡처 (⌘K)" aria-label="캡처">＋ 캡처</button>
-      <a id="settings-link" class="icon-btn" href="#/settings" aria-label="설정" title="설정">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
-      </a>
-    </div>
-  </header>
-
-  <main id="view" class="view"></main>
-  <nav id="nav" class="nav" aria-label="모듈"></nav>
-
-  <dialog id="capture-dialog" class="sheet" aria-label="캡처">
-    <form method="dialog" class="sheet-body">
-      <div class="sheet-head"><strong>캡처</strong><span class="muted small">머릿속에서 꺼내기. 정리는 나중에.</span></div>
-      <textarea id="capture-text" class="field" rows="3" placeholder="떠오른 할 일, 걱정, 아이디어…"></textarea>
-      <div class="row end">
-        <button value="cancel" class="btn ghost">닫기</button>
-        <button id="capture-save" value="save" class="btn primary">저장 <span class="kbd">Enter</span></button>
-      </div>
-    </form>
-  </dialog>
-
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="js/app.js"></script>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>
