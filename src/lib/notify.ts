@@ -22,7 +22,7 @@ export const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navi
 
 export interface NotifyOptions { body?: string; tag?: string; route?: string }
 
-export async function notify(title: string, { body, tag, route = '/today' }: NotifyOptions = {}): Promise<boolean> {
+export async function notify(title: string, { body, tag, route = '/now' }: NotifyOptions = {}): Promise<boolean> {
   if (permission() !== 'granted') return false;
   const options: NotificationOptions = {
     body,

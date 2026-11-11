@@ -22,7 +22,7 @@ self.addEventListener('activate', (event) => {
 // 알림을 누르면: 열려 있는 앱 창을 앞으로 가져와 해당 화면으로, 없으면 새로 연다.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const route: string = event.notification.data?.route || '/today';
+  const route: string = event.notification.data?.route || '/now';
   event.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     const win = wins.find((w) => w.url.startsWith(self.registration.scope));

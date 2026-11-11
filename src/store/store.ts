@@ -7,7 +7,7 @@
 // - 저장 실패는 'harness:persist' 이벤트로 알린다 (화면에 배너)
 import { produce } from 'immer';
 import { useSyncExternalStore } from 'react';
-import { STORAGE_KEY, defaultState, isBackup, migrate, type State } from './model';
+import { LEGACY_KEY, STORAGE_KEY, defaultState, fromLegacy, isBackup, isLegacy, migrate, type State } from './model';
 
 export const SAVE_DELAY = 300;
 
@@ -19,14 +19,26 @@ export function createStore(storage: Storage = window.localStorage, target: Wind
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   let lastWritten: string | null = null;
   let failing = false;
+  let fromOld = false;
   let state: State = load();
+  // v1/v2에서 옮겨 왔으면 v3 키에 바로 써 둔다 (v1 키는 백업으로 그대로 둔다)
+  if (fromOld) writeNow();
 
   function load(): State {
     let raw: string | null = null;
     try {
       raw = storage.getItem(STORAGE_KEY);
       lastWritten = raw;
-      return raw ? migrate(JSON.parse(raw)) : defaultState();
+      if (raw) return migrate(JSON.parse(raw));
+      const old = storage.getItem(LEGACY_KEY);
+      if (old) {
+        try {
+          const s = fromLegacy(JSON.parse(old));
+          fromOld = true;
+          return s;
+        } catch { /* 옛 데이터가 깨졌으면 새로 시작 (v1 키는 건드리지 않는다) */ }
+      }
+      return defaultState();
     } catch {
       // 깨진 데이터를 새 기본값으로 덮어쓰기 전에 따로 보관해 둔다.
       try { if (raw) storage.setItem(`${STORAGE_KEY}.corrupt-${Date.now()}`, raw); } catch { /* noop */ }
@@ -95,7 +107,7 @@ export function createStore(storage: Storage = window.localStorage, target: Wind
     importJSON(text: string) {
       const parsed: unknown = JSON.parse(text);
       if (!isBackup(parsed)) throw new Error('휴먼 하네스 백업 파일이 아닙니다.');
-      state = migrate(parsed);
+      state = isLegacy(parsed) ? fromLegacy(parsed) : migrate(parsed);
       writeNow();
       emit();
     },
