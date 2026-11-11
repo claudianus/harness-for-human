@@ -46,23 +46,68 @@ function defaultState() {
 
 const LIST_KEYS = ['sessions', 'captures', 'rules', 'logs', 'habits', 'thinks', 'reviews'];
 
+// 백업 파일은 손으로 고치거나 오래된 버전일 수 있으므로, 화면이 기대하는 모양으로 하나씩 맞춘다.
+const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
+const str = (v) => (typeof v === 'string' ? v : '');
+const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+const arr = (v) => (Array.isArray(v) ? v : []);
+const idOf = (v) => (typeof v === 'string' && v ? v : uid());
+
+function normDay(d) {
+  const e = emptyDay();
+  if (!isObj(d)) return e;
+  return {
+    ...e, ...d,
+    intention: str(d.intention),
+    top3: arr(d.top3).filter(isObj).map((x) => ({ ...x, id: idOf(x.id), text: str(x.text), done: !!x.done })),
+    ifThen: arr(d.ifThen).filter(isObj).map((x) => ({ ...x, id: idOf(x.id), if: str(x.if), then: str(x.then) })),
+    shutdown: { ...e.shutdown, ...(isObj(d.shutdown) ? d.shutdown : {}) },
+    sleep: num(d.sleep, null),
+    moved: !!d.moved,
+  };
+}
+
+const NORM = {
+  sessions: (x) => {
+    const startAt = num(x.startAt, Date.now());
+    return { ...x, goal: str(x.goal), criteria: str(x.criteria), firstAction: str(x.firstAction), plannedMin: num(x.plannedMin, 25),
+      startAt, endAt: num(x.endAt, startAt), status: ['active', 'reviewing', 'done'].includes(x.status) ? x.status : 'done' };
+  },
+  captures: (x) => ({ ...x, text: str(x.text), at: num(x.at, Date.now()), status: ['inbox', 'later', 'idea', 'done'].includes(x.status) ? x.status : 'inbox' }),
+  rules: (x) => ({ ...x, text: str(x.text), trigger: str(x.trigger), status: x.status === 'graduated' ? 'graduated' : 'active', createdAt: num(x.createdAt, Date.now()) }),
+  logs: (x) => {
+    const at = num(x.at, Date.now());
+    return { ...x, at, day: typeof x.day === 'string' ? x.day : dayKey(new Date(at)), hour: num(x.hour, new Date(at).getHours()), energy: num(x.energy, 3) };
+  },
+  habits: (x) => ({ ...x, anchor: str(x.anchor), tiny: str(x.tiny), status: x.status === 'graduated' ? 'graduated' : 'active', done: isObj(x.done) ? x.done : {} }),
+  thinks: (x) => ({ ...x, tool: str(x.tool), data: isObj(x.data) ? x.data : {}, at: num(x.at, Date.now()), updatedAt: num(x.updatedAt, num(x.at, Date.now())) }),
+  reviews: (x) => ({ ...x, week: str(x.week), at: num(x.at, Date.now()), wins: str(x.wins), misses: str(x.misses), change: str(x.change) }),
+};
+
 function migrate(raw) {
   const d = defaultState();
-  if (!raw || typeof raw !== 'object') return d;
+  if (!isObj(raw)) return d;
   const out = { ...d, ...raw };
-  out.settings = { ...d.settings, ...(raw.settings || {}) };
-  out.settings.modules = { ...d.settings.modules, ...((raw.settings || {}).modules || {}) };
-  for (const k of LIST_KEYS) if (!Array.isArray(out[k])) out[k] = [];
-  if (!out.days || typeof out.days !== 'object') out.days = {};
+  const rs = isObj(raw.settings) ? raw.settings : {};
+  out.settings = { ...d.settings, ...rs };
+  out.settings.modules = { ...d.settings.modules, ...(isObj(rs.modules) ? rs.modules : {}) };
+  out.settings.focusMin = num(out.settings.focusMin, 25);
+  if (!MODULES.some((m) => out.settings.modules[m.id])) out.settings.modules.today = true;
+  for (const k of LIST_KEYS) out[k] = arr(out[k]).filter(isObj).map((x) => NORM[k]({ ...x, id: idOf(x.id) }));
+  out.days = Object.fromEntries(Object.entries(isObj(out.days) ? out.days : {})
+    .filter(([k]) => /^\d{4}-\d{2}-\d{2}$/.test(k)).map(([k, v]) => [k, normDay(v)]));
   out.version = VERSION;
   return out;
 }
 
 function load() {
+  let raw = null;
   try {
-    const raw = localStorage.getItem(KEY);
+    raw = localStorage.getItem(KEY);
     return raw ? migrate(JSON.parse(raw)) : defaultState();
   } catch {
+    // 깨진 데이터를 새 기본값으로 덮어쓰기 전에 따로 보관해 둔다.
+    try { if (raw) localStorage.setItem(`${KEY}.corrupt-${Date.now()}`, raw); } catch { /* noop */ }
     return defaultState();
   }
 }
@@ -70,16 +115,56 @@ function load() {
 let state = load();
 const subs = new Set();
 
-function persist() {
+// 저장은 잠깐 모았다가 한 번에 (타이핑할 때마다 전체를 직렬화하지 않도록)
+const SAVE_DELAY = 300;
+let saveTimer = null;
+let lastWritten = null;
+let failing = false;
+
+function writeNow() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
   try {
-    localStorage.setItem(KEY, JSON.stringify(state));
+    const json = JSON.stringify(state);
+    localStorage.setItem(KEY, json);
+    lastWritten = json;
+    if (failing) {
+      failing = false;
+      window.dispatchEvent(new CustomEvent('harness:persist', { detail: { ok: true } }));
+    }
   } catch (e) {
     console.warn('저장 실패', e);
+    if (!failing) {
+      failing = true;
+      window.dispatchEvent(new CustomEvent('harness:persist', { detail: { ok: false, error: e } }));
+    }
   }
+}
+function persist() {
+  if (!saveTimer) saveTimer = setTimeout(writeNow, SAVE_DELAY);
 }
 function emit() {
   subs.forEach((f) => f(state));
 }
+
+// 탭이 닫히거나 가려지기 전에 남은 저장을 마친다.
+window.addEventListener('pagehide', () => { if (saveTimer) writeNow(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && saveTimer) writeNow(); });
+
+// 다른 탭(또는 설치한 앱 창)에서 바꾼 내용을 받아 온다. 받지 않으면 서로의 기록을 덮어쓴다.
+window.addEventListener('storage', (e) => {
+  if (e.key !== KEY || e.storageArea !== localStorage) return;
+  if (e.newValue == null) {
+    state = defaultState();
+  } else {
+    if (e.newValue === lastWritten) return;
+    try { state = migrate(JSON.parse(e.newValue)); } catch { return; }
+  }
+  lastWritten = e.newValue;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  emit();
+});
 
 export const store = {
   get: () => state,
@@ -100,17 +185,18 @@ export const store = {
       throw new Error('휴먼 하네스 백업 파일이 아닙니다.');
     }
     state = migrate(parsed);
-    persist();
+    writeNow();
     emit();
   },
   reset() {
     state = defaultState();
-    persist();
+    writeNow();
     emit();
   },
+  flush: () => { if (saveTimer) writeNow(); },
 };
 
-export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+export function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
 export function dayKey(d = new Date()) {
   const y = d.getFullYear();

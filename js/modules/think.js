@@ -69,6 +69,36 @@ export function open(toolKey, seed = '') {
   });
 }
 
+// 다른 탭으로 나가면 편집기를 닫는다. 아무것도 적지 않았다면 기록도 남기지 않는다.
+export function onLeave() {
+  if (!openId) return;
+  const id = openId;
+  openId = null;
+  const x = store.get().thinks.find((y) => y.id === id);
+  if (x && isEmpty(x)) store.update((s) => { s.thinks = s.thinks.filter((y) => y.id !== id); }, { silent: true });
+}
+
+// 가져온 백업에 빠진 칸이 있어도 편집기가 깨지지 않게 기본값으로 채운다.
+function fillData(t) {
+  const base = initData(t.tool);
+  const d = t.data;
+  for (const [k, v] of Object.entries(base)) {
+    if (Array.isArray(v)) { if (!Array.isArray(d[k])) d[k] = v; }
+    else if (v !== null && typeof d[k] !== typeof v) d[k] = v;
+  }
+  if (t.tool === 'decision') {
+    if (!d.options.length) d.options = base.options;
+    if (!d.criteria.length) d.criteria = base.criteria;
+    if (!d.scores || typeof d.scores !== 'object') d.scores = {};
+  } else {
+    for (const f of TOOLS[t.tool].fields) {
+      if (f.type !== 'text') d[f.k] = d[f.k].map((x) => (typeof x === 'string' ? x : ''));
+      if (f.type === 'list' && !d[f.k].length) d[f.k] = [''];
+      if (f.type === 'chain' && d[f.k].length < f.n) d[f.k] = [...d[f.k], ...Array(f.n - d[f.k].length).fill('')];
+    }
+  }
+}
+
 function initData(k) {
   if (k === 'decision') {
     return {
@@ -101,8 +131,9 @@ function titleOf(t) {
 
 export function render(s, ctx) {
   const root = h('div', { class: 'stack' }, screenHeader('think'));
-  const cur = openId && s.thinks.find((t) => t.id === openId);
+  const cur = openId && s.thinks.find((t) => t.id === openId && TOOLS[t.tool]);
   if (cur) {
+    fillData(cur);
     root.append(editor(cur, ctx));
     return root;
   }
@@ -113,7 +144,7 @@ export function render(s, ctx) {
 
   root.append(card({ title: '저장된 생각', tag: s.thinks.length ? `${s.thinks.length}개` : null },
     s.thinks.length
-      ? h('ul', { class: 'history' }, s.thinks.slice(0, 20).map((t) => h('li', { class: 'clickable', onClick: () => { openId = t.id; ctx.rerender(); window.scrollTo(0, 0); } },
+      ? h('ul', { class: 'history' }, s.thinks.slice(0, 20).map((t) => h('li', { class: 'clickable', onClick: () => { if (!TOOLS[t.tool]) return toast('알 수 없는 도구의 기록입니다.'); openId = t.id; ctx.rerender(); window.scrollTo(0, 0); } },
           h('span', { class: 'tag' }, TOOLS[t.tool]?.name || t.tool),
           h('span', { class: 'grow' }, titleOf(t)),
           h('span', { class: 'muted small' }, timeAgo(t.updatedAt)))))

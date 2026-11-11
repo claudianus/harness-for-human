@@ -1,4 +1,4 @@
-import { store, MODULES, runningSession, addCapture } from './store.js';
+import { store, MODULES, runningSession, addCapture, dayKey } from './store.js';
 import { h, icon, toast, fmtClock, beep, focusNext, unlockAudio } from './ui.js';
 import * as today from './modules/today.js';
 import * as focus from './modules/focus.js';
@@ -17,6 +17,7 @@ const pill = document.getElementById('session-pill');
 
 let cleanups = [];
 let lastRoute = null;
+let renderedDay = dayKey();
 
 const enabledModules = () => MODULES.filter((m) => store.get().settings.modules[m.id]);
 
@@ -45,8 +46,11 @@ const ctx = {
 function render() {
   cleanups.forEach((f) => { try { f(); } catch { /* noop */ } });
   cleanups = [];
-  const s = store.get();
   const r = currentRoute();
+  // 화면을 떠날 때 모듈이 정리할 기회 (예: 비어 있는 생각 기록 지우기)
+  if (lastRoute && r !== lastRoute) VIEWS[lastRoute]?.onLeave?.();
+  const s = store.get();
+  renderedDay = dayKey();
   const keepScroll = r === lastRoute;
   const y = window.scrollY;
   viewEl.replaceChildren(VIEWS[r].render(s, ctx));
@@ -98,7 +102,18 @@ function tickPill() {
 }
 pill.addEventListener('click', () => navigate('focus'));
 window.addEventListener('pointerdown', unlockAudio, { once: true });
-setInterval(tickPill, 1000);
+const typing = () => document.activeElement?.matches('input,textarea,select');
+setInterval(() => {
+  tickPill();
+  // 자정이 지나면 날짜를 쓰는 화면을 새 날로. 입력 중이면 손을 뗄 때까지 기다린다.
+  if (dayKey() !== renderedDay && !typing() && !dlg.open) render();
+}, 1000);
+
+// 저장 실패는 조용히 넘기지 않는다. 다음 저장이 성공할 때까지 배너를 띄운다.
+const saveBanner = h('div', { class: 'save-error', role: 'alert', hidden: true },
+  '저장되지 않고 있습니다. 브라우저 저장 공간이 꽉 찼거나 비공개 모드일 수 있습니다. 설정 → 백업 내보내기로 지금 내용을 보관하세요.');
+document.body.prepend(saveBanner);
+window.addEventListener('harness:persist', (e) => { saveBanner.hidden = e.detail.ok; });
 
 // 전역 캡처
 const dlg = document.getElementById('capture-dialog');
@@ -137,8 +152,7 @@ window.addEventListener('keydown', (e) => {
 
 store.subscribe(() => { render(); tickPill(); });
 window.addEventListener('hashchange', render);
-// 자정이 지나면 오늘 화면이 새 날로 바뀌도록
-document.addEventListener('visibilitychange', () => { if (!document.hidden && !document.activeElement?.matches('input,textarea')) render(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && dayKey() !== renderedDay && !typing()) render(); });
 
 render();
 tickPill();

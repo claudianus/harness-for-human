@@ -1,5 +1,5 @@
 // 시스템 프롬프트: 오늘의 한 문장, 가장 중요한 3가지, if-then 계획, 하루 종료 의식
-import { store, getDay, peekDay, dayKey, openSession, activeRules, uid } from '../store.js';
+import { store, getDay, peekDay, dayKey, keyToDate, lastDayKeys, openSession, activeRules, uid } from '../store.js';
 import { h, card, textarea, input, field, btn, iconBtn, icon, focusNext, toast } from '../ui.js';
 import { prefill, ruleLine } from './focus.js';
 
@@ -34,9 +34,14 @@ function onboarding() {
     btn('알겠어요', () => store.update((st) => { st.settings.onboarded = true; }), 'primary sm'));
 }
 
+// 최근 3일 안에 남긴 "내일의 첫 행동"만. 더 오래된 메모는 이미 의미가 없다.
 function prevTomorrow(s, key) {
-  const k = Object.keys(s.days).filter((x) => x < key && s.days[x].shutdown?.tomorrow).sort().pop();
-  return k ? s.days[k].shutdown.tomorrow : null;
+  const end = keyToDate(key);
+  end.setDate(end.getDate() - 1);
+  const k = lastDayKeys(3, end).reverse().find((x) => s.days[x]?.shutdown?.tomorrow?.trim());
+  if (!k) return null;
+  const d = keyToDate(k);
+  return { text: s.days[k].shutdown.tomorrow, label: k === dayKey(end) ? '어제 정한 첫 행동' : `${d.getMonth() + 1}/${d.getDate()}에 정한 첫 행동` };
 }
 
 function signals(s, ctx, key) {
@@ -46,9 +51,11 @@ function signals(s, ctx, key) {
 
   const tmr = prevTomorrow(s, key);
   const day = peekDay(s, key);
-  if (tmr && !sess && !day.shutdown.done) {
-    rows.push(sig('arrow', h('span', {}, h('span', { class: 'muted' }, '어제 정한 첫 행동 · '), tmr), () => {
-      prefill({ firstAction: tmr });
+  // 오늘 세션을 이미 시작했다면 첫 행동은 끝난 것으로 본다.
+  const startedToday = s.sessions.some((x) => dayKey(new Date(x.startAt)) === key);
+  if (tmr && !sess && !startedToday && !day.shutdown.done) {
+    rows.push(sig('arrow', h('span', {}, h('span', { class: 'muted' }, `${tmr.label} · `), tmr.text), () => {
+      prefill({ firstAction: tmr.text });
       ctx.navigate('focus');
     }));
   }

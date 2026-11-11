@@ -1,8 +1,20 @@
 // 평가 루프: 이번 주 데이터를 보고, 하네스 자체를 고친다. 결론은 매뉴얼 규칙이 된다.
 import { store, uid, weekStart, dayKey, activeRules, addRule } from '../store.js';
-import { h, card, textarea, field, screenHeader, btn, empty, toast, fmtDate } from '../ui.js';
+import { h, card, textarea, field, screenHeader, btn, chips, empty, toast, fmtDate } from '../ui.js';
 
 let draft = { wins: '', misses: '', change: '', toRule: true };
+let pick = null; // 'last' | 'this' — 직접 고르기 전엔 자동
+
+// 월·화요일엔 막 끝난 지난주를 먼저 보여 준다 (아직 회고하지 않았다면).
+function targetWeek(s) {
+  const thisWs = weekStart();
+  const lastWs = new Date(thisWs);
+  lastWs.setDate(lastWs.getDate() - 7);
+  const lastDone = s.reviews.some((r) => r.week === dayKey(lastWs));
+  const early = [1, 2].includes(new Date().getDay());
+  const which = pick || (early && !lastDone ? 'last' : 'this');
+  return { which, ws: which === 'last' ? lastWs : thisWs };
+}
 
 function weekKeys(ws) {
   return Array.from({ length: 7 }, (_, i) => {
@@ -36,14 +48,16 @@ function weekStats(s, ws) {
 }
 
 export function render(s, ctx) {
-  const ws = weekStart();
+  const { which, ws } = targetWeek(s);
   const st = weekStats(s, ws);
+  const wl = which === 'last' ? '지난주' : '이번 주';
   const weekId = dayKey(ws);
   const already = s.reviews.find((r) => r.week === weekId);
-  const root = h('div', { class: 'stack' }, screenHeader('review', '주간 회고'));
+  const root = h('div', { class: 'stack' }, screenHeader('review', '주간 회고'),
+    chips([{ value: 'last', label: '지난주' }, { value: 'this', label: '이번 주' }], which, (v) => { pick = v; ctx.rerender(); }));
 
   const stat = (label, value, sub) => h('div', { class: 'stat' }, h('div', { class: 'stat-v' }, value), h('div', { class: 'stat-l' }, label), sub && h('div', { class: 'muted small' }, sub));
-  root.append(card({ title: '이번 주 측정값', tag: `${fmtDate(ws)} 주` },
+  root.append(card({ title: `${wl} 측정값`, tag: `${fmtDate(ws)} 주` },
     h('div', { class: 'stats' },
       stat('집중 세션', st.sessions, `${st.mins}분`),
       stat('기준 충족', st.sessions ? `${Math.round((st.met / st.sessions) * 100)}%` : '–', st.sessions ? `${st.met}/${st.sessions}` : null),
@@ -54,7 +68,7 @@ export function render(s, ctx) {
       st.habitRate != null && stat('습관 실행', `${st.habitRate}%`),
       stat('캡처', st.captures)),
     st.blockers.length > 0 && h('div', { class: 'blockers' },
-      h('div', { class: 'mini-label' }, '이번 주 세션을 막은 것들'),
+      h('div', { class: 'mini-label' }, `${wl} 세션을 막은 것들`),
       h('ul', {}, st.blockers.map((b) => h('li', {}, h('span', { class: 'muted' }, `${b.goal} · `), b.text))))));
 
   const rules = activeRules(s);
@@ -68,12 +82,12 @@ export function render(s, ctx) {
   }
 
   if (already) {
-    root.append(card({ title: '이번 주 회고 완료', cls: 'accent-soft' },
+    root.append(card({ title: `${wl} 회고 완료`, cls: 'accent-soft' },
       reviewBody(already),
-      h('p', { class: 'hint' }, '다음 주 월요일에 새 회고가 열린다.')));
+      which === 'this' && h('p', { class: 'hint' }, '다음 주 월요일에 새 회고가 열린다.')));
   } else {
     const set = (k) => (v) => { draft[k] = v; };
-    root.append(card({ title: '회고', sub: '10분이면 충분하다. 결론은 행동 하나.' },
+    root.append(card({ title: `${wl} 회고`, sub: '10분이면 충분하다. 결론은 행동 하나.' },
       field('잘 작동한 것', textarea({ value: draft.wins, placeholder: '계속할 것', rows: 2, onInput: set('wins') })),
       field('막힌 것, 새는 곳', textarea({ value: draft.misses, placeholder: '위의 측정값과 막힌 것들을 참고', rows: 2, onInput: set('misses') })),
       field('다음 주에 하네스를 바꿀 한 가지', textarea({ value: draft.change, placeholder: '예: 오전 9~11시엔 메신저를 끈다', rows: 2, onInput: set('change') })),
@@ -88,6 +102,7 @@ export function render(s, ctx) {
           if (d.toRule) addRule(x, d.change, '', 'review');
         });
         draft = { wins: '', misses: '', change: '', toRule: true };
+        pick = null;
         toast(d.toRule ? '저장했습니다. 매뉴얼에 규칙이 추가됐습니다.' : '저장했습니다.');
       }, 'primary'))));
   }
