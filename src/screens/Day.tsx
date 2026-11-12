@@ -2,8 +2,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { clearOutcome, record, reopenDay, requestWrap } from '../core/actions';
-import { dayProgress, dayStartMin, logicalKey, prevKey } from '../core/engine';
+import { dayProgress, dayReminders, dayStartMin, logicalKey, prevKey, triggerAt } from '../core/engine';
 import { STATE_LABEL, dateLabel, hm } from '../core/format';
+import { resolveItem } from '../core/actions';
 import { iconOf } from '../core/templates';
 import { useNow } from '../lib/hooks';
 import { peekDay, type OutcomeStatus } from '../store/model';
@@ -21,6 +22,7 @@ export default function Day() {
   const key = logicalKey(now, dayStartMin(s.profile));
   const prog = dayProgress(s, key, now);
   const day = peekDay(s, key);
+  const reminders = dayReminders(s, key, dayStartMin(s.profile));
 
   // 지난 7일: 한 것 / 해야 했던 것
   const week: { key: string; did: number; total: number }[] = [];
@@ -40,6 +42,22 @@ export default function Day() {
       </header>
 
       <section className="card">
+        {reminders.length > 0 && (
+          <ul className="timeline appts">
+            {reminders.map((i) => (
+              <li key={i.id} className={`tl ${i.status === 'done' ? 'done' : ''}`}>
+                <div className="tl-row">
+                  <span className="tl-time">{hm(i.due!)}</span>
+                  <span className="tl-icon" aria-hidden="true">{i.travel ? '🚪' : '⏰'}</span>
+                  <span className="grow">{i.text}{i.travel ? <span className="muted small"> · {hm(triggerAt(i))} 출발</span> : null}</span>
+                  {i.status === 'done'
+                    ? <span className="tl-state done">했어요</span>
+                    : <button type="button" className="btn sm" onClick={() => { const t = Date.now(); store.update((st) => resolveItem(st, i.id, 'done', t)); }}>했어요</button>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
         {prog.length === 0 ? <p className="empty">오늘 정해진 할 일이 없어요.</p> : (
           <ol className="timeline">
             {prog.map((p) => {

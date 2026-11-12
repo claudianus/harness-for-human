@@ -3,6 +3,8 @@ import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { dayStartMin, offsetOf } from '../core/engine';
 import { spoken } from '../core/format';
+import { download, routinesIcs } from '../core/ics';
+import { clearClips, pruneClips } from '../lib/audio';
 import { iconOf } from '../core/templates';
 import { isIOS, isStandalone, permission, requestPermission, type Permission } from '../lib/notify';
 import { toast } from '../lib/toast';
@@ -17,7 +19,6 @@ export default function Me() {
   const anchors = useStore((s) => s.anchors);
   const profile = useStore((s) => s.profile);
   const notifyOn = useStore((s) => s.settings.notify);
-  const items = useStore((s) => s.items).filter((i) => i.status === 'inbox');
   const [perm, setPerm] = useState<Permission>(() => permission());
   const file = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
@@ -40,6 +41,7 @@ export default function Me() {
       const text = await f.text();
       if (!confirm('지금 데이터를 백업 파일 내용으로 바꿀까요? 지금 기록은 사라집니다.')) return;
       store.importJSON(text);
+      void pruneClips(new Set(store.get().items.flatMap((i) => (i.audio ? [i.audio.id] : [])))).catch(() => {});
       toast('백업을 불러왔어요.');
     } catch (e) {
       toast(e instanceof SyntaxError ? '파일을 읽을 수 없어요. 백업 파일이 맞는지 확인해 주세요.' : e instanceof Error ? e.message : '불러오지 못했어요.');
@@ -90,19 +92,11 @@ export default function Me() {
         )}
       </section>
 
-      {items.length > 0 && (
-        <section className="card">
-          <div className="card-head"><h2>예전에 적어 둔 메모</h2><span className="tag">{items.length}</span></div>
-          <ul className="memo">
-            {items.map((i) => (
-              <li key={i.id}>
-                <span className="grow">{i.text}</span>
-                <button type="button" className="btn ghost sm" onClick={() => store.update((s) => { const x = s.items.find((y) => y.id === i.id); if (x) x.status = 'done'; })}>처리함</button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <section className="card">
+        <div className="card-head"><h2>앱을 닫아도 울리게 하기</h2></div>
+        <p className="sub">이 앱은 열려 있을 때만 울릴 수 있어요. 루틴을 휴대폰 캘린더에 넣어 두면 앱이 닫혀 있어도 매일 그 시각에 캘린더가 알려 줍니다. 시간을 바꾸거나 루틴을 쉬게 하면 캘린더에서 예전 일정을 지우고 다시 넣어 주세요.</p>
+        <button type="button" className="btn primary" onClick={() => download('human-harness-routines.ics', routinesIcs(anchors))}>루틴을 캘린더에 넣기</button>
+      </section>
 
       <section className="card">
         <div className="card-head"><h2>설정과 백업</h2></div>
@@ -110,12 +104,12 @@ export default function Me() {
           <button type="button" className="btn" onClick={() => { resetupAtom.set(true); navigate('/now'); }}>처음부터 다시 설정</button>
         </div>
         <p className="sub">질문 4개에 다시 답하고 루틴을 새로 받아요. 지난 기록은 그대로 남아요.</p>
-        <p className="sub">기록은 이 기기의 브라우저에만 저장돼요. 기기를 바꾸거나 브라우저 데이터를 지우기 전에 백업해 두세요.</p>
+        <p className="sub">기록은 이 기기의 브라우저에만 저장돼요. 기기를 바꾸거나 브라우저 데이터를 지우기 전에 백업해 두세요. 아이폰은 앱을 오래 안 열면 브라우저가 기록을 지울 수 있어요. 녹음 소리는 백업 파일에 들어가지 않아요 (글과 시각만 들어갑니다).</p>
         <div className="row">
           <button type="button" className="btn ghost" onClick={exportBackup}>백업 내보내기</button>
           <button type="button" className="btn ghost" onClick={() => file.current?.click()}>백업 불러오기</button>
           <input ref={file} type="file" accept="application/json,.json" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void importBackup(f); }} />
-          <button type="button" className="btn ghost danger" onClick={() => { if (confirm('모든 기록과 루틴을 지웁니다. 되돌릴 수 없어요. 계속할까요?')) { store.reset(); toast('초기화했어요.'); } }}>모두 지우기</button>
+          <button type="button" className="btn ghost danger" onClick={() => { if (confirm('모든 기록과 루틴을 지웁니다. 되돌릴 수 없어요. 계속할까요?')) { store.reset(); void clearClips().catch(() => {}); toast('초기화했어요.'); } }}>모두 지우기</button>
         </div>
       </section>
 

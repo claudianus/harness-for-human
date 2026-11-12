@@ -2,7 +2,7 @@
 //
 // 하루의 경계: 취침과 기상의 한가운데. (01:00에 자고 09:00에 깨면 05:00에 하루가 바뀐다)
 // 그래서 새벽 1시의 "눕기"는 전날 하루에 속한다.
-import { dayKey, emptyDay, keyToDate, type Anchor, type Day, type Profile, type State } from '../store/model';
+import { dayKey, emptyDay, keyToDate, type Anchor, type Day, type Item, type Profile, type State } from '../store/model';
 import { toMin } from './templates';
 
 const DAY = 1440;
@@ -54,10 +54,54 @@ const startOf = (s: State, a: Anchor) => Math.max(s.profile.setupAt ?? 0, a.crea
 // 그날 안에서 시작 시각의 위치 (그날 이전에 시작했으면 -1)
 const startOffIn = (start: number, key: string, ds: number) => (start >= dayStartTs(key, ds) ? nowOffset(start, ds) : -1);
 
+// ---- 맡긴 것 (알림·약속·메모) ----
+export const LATE_AFTER = 60; // 약속 시각에서 1시간이 지나면 "어떻게 됐나요?"로 묻는다
+// 카드가 나오는 시각: 이동 시간이 있으면 그만큼 먼저
+export const triggerAt = (i: Item) => (i.due ?? 0) - (i.travel ?? 0) * 60000;
+const timed = (s: State) => s.items.filter((i) => i.status === 'inbox' && i.due != null);
+
+export function dueReminder(s: State, now: number): Item | null {
+  let best: Item | null = null;
+  for (const i of timed(s)) {
+    if (triggerAt(i) > now || (i.snooze ?? 0) > now) continue;
+    if (!best || triggerAt(i) < triggerAt(best)) best = i;
+  }
+  return best;
+}
+// 다음에 나올 알림과 그 시각
+export function nextReminder(s: State, now: number): { item: Item; at: number } | null {
+  let best: { item: Item; at: number } | null = null;
+  for (const i of timed(s)) {
+    const at = Math.max(triggerAt(i), i.snooze ?? 0);
+    if (at <= now) continue;
+    if (!best || at < best.at) best = { item: i, at };
+  }
+  return best;
+}
+// 그날(논리적 하루)에 속한 알림·약속, 시각 순서
+export function dayReminders(s: State, key: string, ds: number): Item[] {
+  const a = dayStartTs(key, ds);
+  return s.items.filter((i) => i.due != null && i.status !== 'dropped' && i.due >= a && i.due < a + DAY * 60000).sort((x, y) => x.due! - y.due!);
+}
+// 저녁 정리에서 물어볼 것: 시각 없는 맡긴 것 (한 번에 3개까지)
+export function triageList(s: State, now: number): Item[] {
+  return s.items.filter((i) => i.status === 'inbox' && i.due == null && !i.keep && (i.defer ?? 0) <= now).slice(0, 3);
+}
+// 논리적 하루 기준의 시각: 오늘(0)이나 내일(1)의 'HH:MM'. 새벽 0시 반의 "내일 아침"은 자고 일어난 아침이다.
+export function slotAt(s: State, now: number, dayOffset: number, hhmm: string): number {
+  const ds = dayStartMin(s.profile);
+  const d = keyToDate(logicalKey(now, ds));
+  d.setDate(d.getDate() + dayOffset);
+  return dayStartTs(dayKey(d), ds) + offsetOf(hhmm, ds) * 60000;
+}
+// "내일 할게요"의 시각: 내일 기상 2시간 뒤
+export const tomorrowSlot = (s: State, now: number) => slotAt(s, now, 1, s.profile.wake) + 120 * 60000;
+
 export const wrapOffset = (p: Profile, ds: number) => Math.max(0, offsetOf(p.sleep, ds) - WRAP_LEAD);
 
 export type NowView =
   | { kind: 'setup' }
+  | { kind: 'remind'; item: Item; late: boolean }
   | { kind: 'yesterday'; anchor: Anchor; key: string }
   | { kind: 'due'; anchor: Anchor; key: string; late: boolean }
   | { kind: 'catchup'; anchor: Anchor; key: string }
@@ -68,6 +112,10 @@ export function selectNow(s: State, now: number): NowView {
   if (!s.profile.setupAt) return { kind: 'setup' };
   const ds = dayStartMin(s.profile);
   const key = logicalKey(now, ds);
+
+  // 시각이 정해진 알림·약속이 가장 먼저다 (놓치면 되돌릴 수 없으므로)
+  const r = dueReminder(s, now);
+  if (r) return { kind: 'remind', item: r, late: now > r.due! + LATE_AFTER * 60000 };
 
   // 어제 결과를 모르는 닻 (예: 마감 뒤의 "눕기") → 아침에 한 번 묻는다
   const yKey = prevKey(key);

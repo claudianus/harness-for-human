@@ -1,14 +1,16 @@
 // "지금" 화면: 지금 할 것 하나만 보여 준다. 무엇을 보여 줄지는 엔진(selectNow)이 정한다.
 import { useState } from 'react';
 import { atom, useAtom } from '../lib/atom';
-import { bringForward, closeDay, record, requestWrap, snooze } from '../core/actions';
-import { dayProgress, dayStartMin, logicalKey, needsReason, selectNow, tomorrowFirst, type NowView } from '../core/engine';
-import { REASONS, STATE_LABEL, dateLabel, hm, josa, spoken, spokenTs, until } from '../core/format';
+import { bringForward, closeDay, record, requestWrap, resolveItem, snooze, snoozeItem, triageItem } from '../core/actions';
+import { dayProgress, dayReminders, dayStartMin, logicalKey, needsReason, nextReminder, selectNow, tomorrowFirst, triageList, type NowView } from '../core/engine';
+import { MOODS, REASONS, STATE_LABEL, dateLabel, hm, josa, spoken, spokenTs, until, whenLabel } from '../core/format';
+import Clip from '../components/Clip';
 import { iconOf } from '../core/templates';
 import { useNow } from '../lib/hooks';
 import { fmtClock } from '../lib/time';
+import { deleteItem } from '../lib/items';
 import { toast } from '../lib/toast';
-import { peekDay, type Anchor, type OutcomeStatus, type Reason, type State } from '../store/model';
+import { peekDay, type Anchor, type Item, type Mood, type OutcomeStatus, type Reason, type State } from '../store/model';
 import { store, useStore } from '../store/store';
 import Setup, { resetupAtom } from './Setup';
 
@@ -57,6 +59,7 @@ const cardKey = (v: NowView) => ('anchor' in v ? `${v.kind}:${v.anchor.id}` : v.
 function ViewCard({ view, s, now }: { view: Exclude<NowView, { kind: 'setup' }>; s: State; now: number }) {
   switch (view.kind) {
     case 'due': return <Due a={view.anchor} dayKey={view.key} late={view.late} snoozed={peekDay(s, view.key).snoozeCount[view.anchor.id] || 0} />;
+    case 'remind': return <Remind item={view.item} late={view.late} now={now} />;
     case 'catchup': return <Catchup a={view.anchor} dayKey={view.key} />;
     case 'yesterday': return <Yesterday a={view.anchor} dayKey={view.key} />;
     case 'wrapup': return <Wrapup s={s} dayKey={view.key} now={now} />;
@@ -118,6 +121,34 @@ function Due({ a, dayKey, late, snoozed }: { a: Anchor; dayKey: string; late: bo
   );
 }
 
+// 알림·약속: 시각이 정해진 맡긴 것. 닻보다 먼저 나온다.
+function Remind({ item, late, now }: { item: Item; late: boolean; now: number }) {
+  const leaving = !!item.travel && now < item.due!;
+  const again = (ms: number) => { act((s, t) => snoozeItem(s, item.id, t + ms)); toast(`${until(ms)}에 다시 알려 드릴게요.`); };
+  const ds = dayStartMin(store.get().profile);
+  const done = () => { act((s, t) => resolveItem(s, item.id, 'done', t)); toast('좋아요. 약속을 지켰어요.'); };
+  // 지나간 약속은 "못 함"으로 남기고, 아직 안 지난 건 완전히 지운다
+  const no = () => {
+    if (late) { act((s, t) => resolveItem(s, item.id, 'dropped', t)); toast('괜찮아요. 기록만 해 둘게요.'); }
+    else { deleteItem(item); toast('알겠어요. 지웠어요.'); }
+  };
+  return (
+    <section className="now-card ask">
+      <p className="now-kicker">{late ? `지나간 알림 · ${whenLabel(item.due!, now, ds)}` : leaving ? `지금 출발하세요 · ${spokenTs(item.due!)} 약속, 가는 데 ${item.travel}분` : `알림 · ${whenLabel(item.due!, now, ds)}`}</p>
+      <div className="now-icon" aria-hidden="true">{late ? '❓' : leaving ? '🚪' : '⏰'}</div>
+      <h1 className="now-title">{item.text}</h1>
+      {item.audio && <Clip audio={item.audio} />}
+      {late && <p className="now-min">어떻게 됐나요?</p>}
+      <div className="now-actions">
+        <button type="button" className="btn primary xl" onClick={done}>{leaving ? '출발했어요' : '했어요'}</button>
+        {!late && <button type="button" className="btn xl" onClick={() => again(leaving ? 5 * 60000 : 10 * 60000)}>{leaving ? '5분 뒤 다시' : '10분 뒤 다시'}</button>}
+        {!late && !leaving && <button type="button" className="btn" onClick={() => again(60 * 60000)}>1시간 뒤 다시</button>}
+        <button type="button" className="btn ghost" onClick={no}>{late ? '못 했어요' : '안 해도 돼요 (지우기)'}</button>
+      </div>
+    </section>
+  );
+}
+
 function Catchup({ a, dayKey }: { a: Anchor; dayKey: string }) {
   return (
     <section className="now-card ask">
@@ -150,6 +181,10 @@ function Yesterday({ a, dayKey }: { a: Anchor; dayKey: string }) {
 
 function Wrapup({ s, dayKey, now }: { s: State; dayKey: string; now: number }) {
   const [reasons, setReasons] = useState<Record<string, Reason>>({});
+  const saved = peekDay(s, dayKey);
+  const [mood, setMood] = useState<Mood | undefined>(saved.mood);
+  const [note, setNote] = useState(saved.note ?? '');
+  const sort = triageList(s, now);
   const prog = dayProgress(s, dayKey, now).filter((p) => p.state !== 'na');
   const did = prog.filter((p) => p.state === 'done' || p.state === 'min').length;
   const pending = needsReason(s, dayKey, now);
@@ -157,16 +192,18 @@ function Wrapup({ s, dayKey, now }: { s: State; dayKey: string; now: number }) {
   const first = tomorrowFirst(s, dayKey);
   const early = peekDay(s, dayKey).wrapRequested;
 
+  const kept = dayReminders(s, dayKey, dayStartMin(s.profile)).filter((i) => i.status === 'done').length;
   const summary = prog.length === 0 ? '오늘은 정해 둔 게 없었어요.'
     : did === prog.length ? '오늘 할 건 전부 했어요. 정말 잘하셨어요.'
     : did > 0 ? `${prog.length}개 중 ${did}개 했어요. 하나라도 했으면 오늘은 이긴 거예요.`
+    : kept > 0 ? '루틴은 못 했지만 약속은 지켰어요. 그게 더 어려운 일이에요.'
     : '오늘은 하나도 못 했어요. 괜찮아요. 그래서 제가 있는 거예요.';
 
   return (
     <section className="now-card wrap">
       <p className="now-kicker">하루 마감</p>
       <h1 className="now-title">오늘 하루, 여기서 정리할게요.</h1>
-      <p className="lead">{summary}</p>
+      <p className="lead">{summary}{kept > 0 && did > 0 ? ` 맡긴 일도 ${kept}개 해냈어요.` : ''}</p>
 
       {pending.length > 0 && (
         <div className="reasons">
@@ -185,6 +222,34 @@ function Wrapup({ s, dayKey, now }: { s: State; dayKey: string; now: number }) {
         </div>
       )}
 
+      {sort.length > 0 && (
+        <div className="reasons">
+          <p className="muted small">맡겨 두신 것 중에 정하지 않은 게 있어요. 하나씩만 골라 주세요.</p>
+          {sort.map((i) => (
+            <div key={i.id} className="reason">
+              <strong>📝 {i.text}</strong>
+              {i.audio && <Clip audio={i.audio} />}
+              <div className="chips">
+                <button type="button" className="chip" onClick={() => act((st, t) => triageItem(st, i.id, 'tomorrow', t))}>내일 알려 주세요</button>
+                <button type="button" className="chip" onClick={() => act((st, t) => triageItem(st, i.id, 'later', t))}>며칠 뒤에 다시</button>
+                <button type="button" className="chip" onClick={() => act((st, t) => triageItem(st, i.id, 'keep', t))}>그냥 메모예요</button>
+                <button type="button" className="chip" onClick={() => deleteItem(i)}>버릴게요</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="reasons">
+        <strong>오늘 기분은 어땠나요?</strong>
+        <div className="moods" role="group" aria-label="오늘 기분">
+          {MOODS.map((m) => (
+            <button key={m.v} type="button" className={`mood ${mood === m.v ? 'on' : ''}`} aria-pressed={mood === m.v} aria-label={m.label} title={m.label} onClick={() => setMood(m.v)}>{m.icon}</button>
+          ))}
+        </div>
+        <input className="field" placeholder="오늘 한 줄 (안 써도 됩니다)" aria-label="오늘 한 줄 일기" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} />
+      </div>
+
       {left.length > 0 && (
         <p className="muted small">마감해도 {josa(left.map((p) => `${spokenTs(p.at)} ${main(p.anchor)}`).join(', '), '은는')} 그때 알려 드릴게요.</p>
       )}
@@ -195,7 +260,7 @@ function Wrapup({ s, dayKey, now }: { s: State; dayKey: string; now: number }) {
         </div>
       )}
       <div className="now-actions">
-        <button type="button" className="btn primary xl" onClick={() => { act((st, t) => closeDay(st, dayKey, t, reasons)); toast('오늘 하루 수고하셨어요.'); }}>하루 마감하기</button>
+        <button type="button" className="btn primary xl" onClick={() => { act((st, t) => closeDay(st, dayKey, t, reasons, { mood, note })); toast('오늘 하루 수고하셨어요.'); }}>하루 마감하기</button>
         {early && <button type="button" className="btn ghost" onClick={() => act((st) => requestWrap(st, dayKey, false))}>아직 아니에요</button>}
       </div>
     </section>
@@ -203,8 +268,29 @@ function Wrapup({ s, dayKey, now }: { s: State; dayKey: string; now: number }) {
 }
 
 function Idle({ s, view, now }: { s: State; view: Extract<NowView, { kind: 'idle' }>; now: number }) {
-  const { next, closed, key } = view;
+  const { closed, key } = view;
   const first = tomorrowFirst(s, key);
+  const remind = nextReminder(s, now);
+  // 닻과 알림 중 더 빨리 오는 쪽을 보여 준다
+  const next = remind && (!view.next || remind.at < view.next.at) ? null : view.next;
+  if (remind && !next) {
+    const leaving = !!remind.item.travel;
+    return (
+      <section className="now-card idle">
+        <p className="now-kicker">{closed ? '오늘은 마감했어요' : '지금은 쉬셔도 돼요'}</p>
+        <p className="lead">다음은 맡겨 두신 일이에요</p>
+        <div className="now-icon" aria-hidden="true">{leaving ? '🚪' : '⏰'}</div>
+        <h1 className="now-title">{remind.item.text}</h1>
+        <p className="now-min">{whenLabel(remind.at, now, dayStartMin(s.profile))}{leaving ? '에 출발' : ''} · {until(remind.at - now)}</p>
+        <p className="muted small">그때 이 화면에 나타나요. 기억하지 않으셔도 됩니다.</p>
+        {!closed && (
+          <div className="now-actions">
+            <button type="button" className="btn ghost" onClick={() => act((st) => requestWrap(st, key, true))}>오늘은 여기까지 (마감하기)</button>
+          </div>
+        )}
+      </section>
+    );
+  }
   if (next) {
     return (
       <section className="now-card idle">

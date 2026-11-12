@@ -39,9 +39,26 @@ export interface Day {
   wrapRequested: boolean; // 마감 시각 전에 직접 마감을 열었다
   closed: boolean;
   closedAt?: number;
+  mood?: Mood; // 일기: 오늘 기분 (1 힘듦 ~ 5 좋음)
+  note?: string; // 일기: 오늘 한 줄
 }
+export type Mood = 1 | 2 | 3 | 4 | 5;
 
-export interface Item { id: string; text: string; at: number; status: 'inbox' | 'done' }
+// 맡긴 것: 메모, 녹음, 알림, 약속이 모두 한 종류다. due가 있으면 그 시각에 "지금" 카드로 나온다.
+export interface AudioRef { id: string; mime: string; ms: number } // 소리 자체는 IndexedDB에 있다
+export interface Item {
+  id: string;
+  text: string;
+  at: number;
+  status: 'inbox' | 'done' | 'dropped';
+  due?: number; // 알림·약속 시각
+  travel?: number; // 가는 데 걸리는 분. 있으면 그만큼 먼저 "출발하세요"
+  snooze?: number; // 이 시각까지 다시 묻지 않는다
+  defer?: number; // 저녁 정리에서 이 시각까지 묻지 않는다
+  keep?: boolean; // 할 일이 아니라 보관할 메모
+  doneAt?: number;
+  audio?: AudioRef;
+}
 
 export interface State {
   version: number;
@@ -124,7 +141,20 @@ function normDay(v: unknown): Day {
     wrapRequested: v.wrapRequested === true,
     closed: v.closed === true,
     ...(typeof v.closedAt === 'number' ? { closedAt: v.closedAt } : {}),
+    ...([1, 2, 3, 4, 5].includes(v.mood as number) ? { mood: v.mood as Mood } : {}),
+    ...(typeof v.note === 'string' && v.note ? { note: v.note } : {}),
   };
+}
+
+function normItem(x: Obj): Item {
+  const it: Item = { id: idOf(x.id), text: str(x.text), at: num(x.at, Date.now()), status: oneOf(x.status, ['inbox', 'done', 'dropped'] as const, 'inbox') };
+  for (const k of ['due', 'travel', 'snooze', 'defer', 'doneAt'] as const) {
+    const v = num(x[k], null);
+    if (v != null) it[k] = v;
+  }
+  if (x.keep === true) it.keep = true;
+  if (isObj(x.audio) && typeof x.audio.id === 'string' && x.audio.id) it.audio = { id: x.audio.id, mime: str(x.audio.mime, 'audio/webm'), ms: num(x.audio.ms, 0) };
+  return it;
 }
 
 function normAnchor(x: Obj): Anchor {
@@ -156,7 +186,7 @@ export function migrate(raw: unknown): State {
     settings: { notify: isObj(raw.settings) && typeof raw.settings.notify === 'boolean' ? raw.settings.notify : true },
     anchors: arr(raw.anchors).filter(isObj).map(normAnchor),
     days,
-    items: arr(raw.items).filter(isObj).map((x) => ({ id: idOf(x.id), text: str(x.text), at: num(x.at, Date.now()), status: x.status === 'done' ? 'done' as const : 'inbox' as const })),
+    items: arr(raw.items).filter(isObj).map(normItem),
   };
 }
 

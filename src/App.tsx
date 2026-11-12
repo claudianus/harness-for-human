@@ -1,22 +1,23 @@
 import { useEffect, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router';
+import Capture from './components/Capture';
 import { Icon } from './components/ui';
-import { selectNow } from './core/engine';
-import { iconOf } from './core/templates';
+import { notifyTargets } from './core/notifier';
 import { useAtom } from './lib/atom';
 import { markSent, notify, sentToday } from './lib/notify';
 import { beep, unlockAudio } from './lib/sound';
 import { toastAtom } from './lib/toast';
-import { peekDay } from './store/model';
 import type { PersistEventDetail } from './store/store';
 import { store, useStore } from './store/store';
 import Day from './screens/Day';
 import Me from './screens/Me';
 import Now from './screens/Now';
+import Records from './screens/Records';
 
 const TABS = [
   { to: '/now', label: '지금', icon: 'now' },
   { to: '/day', label: '하루', icon: 'day' },
+  { to: '/records', label: '기록', icon: 'inbox' },
   { to: '/me', label: '나', icon: 'me' },
 ];
 
@@ -36,10 +37,12 @@ export default function App() {
         <Routes>
           <Route path="/now" element={<Now />} />
           <Route path="/day" element={setupDone ? <Day /> : <Navigate to="/now" replace />} />
+          <Route path="/records" element={setupDone ? <Records /> : <Navigate to="/now" replace />} />
           <Route path="/me" element={setupDone ? <Me /> : <Navigate to="/now" replace />} />
           <Route path="*" element={<Navigate to="/now" replace />} />
         </Routes>
       </main>
+      {setupDone && <Capture />}
       {setupDone && (
         <nav className="nav" aria-label="화면" style={{ '--n': TABS.length } as React.CSSProperties}>
           {TABS.map((t) => (
@@ -66,27 +69,18 @@ function useNotifier() {
   useEffect(() => {
     const check = () => {
       const s = store.get();
-      const v = selectNow(s, Date.now());
-      let id: string, title: string, body: string;
-      if (v.kind === 'due') {
-        const sn = peekDay(s, v.key).snoozes[v.anchor.id];
-        id = `${v.key}:${v.anchor.id}:${sn ?? 'on'}`;
-        title = `${iconOf(v.anchor)} ${v.anchor.target === 'min' ? v.anchor.minimum : v.anchor.title}`;
-        body = v.anchor.target === 'min' ? '지금 할 시간이에요.' : `지금 할 시간이에요. 힘들면 ${v.anchor.minimum}만 하세요.`;
-      } else if (v.kind === 'wrapup') {
-        id = `${v.key}:wrap`;
-        title = '하루 마감';
-        body = '1분이면 돼요. 오늘을 정리하고 내일 첫 할 일을 확인하세요.';
-      } else return;
-      if (sentToday(id)) return;
-      if (!document.hidden) {
-        markSent(id); // 화면에서 이미 봤다
-        return;
+      for (const t of notifyTargets(s, Date.now())) {
+        if (sentToday(t.id)) continue;
+        if (!document.hidden) {
+          markSent(t.id); // 화면에서 이미 봤다
+          if (t.loud) beep(); // 약속은 화면을 보고 있어도 소리로 알린다
+          continue;
+        }
+        if (!s.settings.notify) continue;
+        void notify(t.title, { body: t.body, tag: t.tag, route: '/now' }).then((ok) => {
+          if (ok) { markSent(t.id); beep(); }
+        });
       }
-      if (!s.settings.notify) return;
-      void notify(title, { body, tag: 'now', route: '/now' }).then((ok) => {
-        if (ok) { markSent(id); beep(); }
-      });
     };
     check();
     const t = setInterval(check, 15_000);

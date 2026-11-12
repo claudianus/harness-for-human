@@ -46,3 +46,22 @@ export const REASONS: { v: 'time' | 'big' | 'forgot' | 'unwilling' | 'none'; lab
   { v: 'time', label: '시간이 안 맞았어요' }, { v: 'big', label: '너무 컸어요' }, { v: 'forgot', label: '잊어버렸어요' },
   { v: 'unwilling', label: '하기 싫었어요' }, { v: 'none', label: '그냥요' },
 ];
+
+// '오늘 오후 3시', '내일 오전 9시', '11월 14일 오후 3시'
+// ds: 하루가 바뀌는 시각(분). 새벽 0시 반에 말하는 "내일 아침"은 자고 일어난 아침이다.
+export function whenLabel(ts: number, now: number, ds = 0): string {
+  const d = new Date(ts - ds * 60000);
+  const n = new Date(now - ds * 60000);
+  const days = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime()) / 86_400_000);
+  const day = days === 0 ? '오늘' : days === 1 ? '내일' : days === -1 ? '어제' : days === 2 ? '모레' : `${d.getMonth() + 1}월 ${d.getDate()}일`;
+  const real = new Date(ts);
+  return `${days > 2 || days < -1 ? `${real.getMonth() + 1}월 ${real.getDate()}일` : day} ${spokenTs(ts)}`;
+}
+export const clipLength = (ms: number) => {
+  const t = Math.max(1, Math.round(ms / 1000));
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+};
+export const MOODS: { v: 1 | 2 | 3 | 4 | 5; icon: string; label: string }[] = [
+  { v: 1, icon: '😣', label: '힘들었어요' }, { v: 2, icon: '😕', label: '별로였어요' }, { v: 3, icon: '😐', label: '그냥 그랬어요' },
+  { v: 4, icon: '🙂', label: '괜찮았어요' }, { v: 5, icon: '😄', label: '좋았어요' },
+];

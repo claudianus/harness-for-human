@@ -1,6 +1,6 @@
 // 화면이 상태를 바꾸는 방법. 모두 store.update 안에서 쓰는 순수한 변경 함수다.
-import { getDay, type OutcomeStatus, type Reason, type State } from '../store/model';
-import { needsReason } from './engine';
+import { getDay, uid, type AudioRef, type Item, type Mood, type OutcomeStatus, type Reason, type State } from '../store/model';
+import { needsReason, tomorrowSlot } from './engine';
 import { prescribe, type SetupAnswers } from './templates';
 
 // 첫 설정(또는 다시 설정): 처방 닻으로 바꾼다. 예전 앱에서 옮겨 온 닻과 직접 만든 닻은 남긴다.
@@ -39,9 +39,10 @@ export function requestWrap(s: State, key: string, on: boolean) {
 }
 
 // 하루 마감: 지나간 닻은 "못 함"으로, 고른 이유를 붙인다.
-export function closeDay(s: State, key: string, now: number, reasons: Record<string, Reason>) {
+export function closeDay(s: State, key: string, now: number, reasons: Record<string, Reason>, journal: { mood?: Mood; note?: string } = {}) {
   const pending = needsReason(s, key, now);
   const d = getDay(s, key);
+  setJournal(s, key, journal);
   for (const a of pending) {
     const o = d.outcomes[a.id] ?? { status: 'missed' as const, at: now };
     const r = reasons[a.id];
@@ -57,4 +58,55 @@ export function reopenDay(s: State, key: string) {
   d.closed = false;
   d.wrapRequested = false;
   delete d.closedAt;
+}
+
+// 일기: 기분 한 번 누르기 + 한 줄 (둘 다 안 해도 된다)
+export function setJournal(s: State, key: string, j: { mood?: Mood; note?: string }) {
+  const d = getDay(s, key);
+  if (j.mood) d.mood = j.mood;
+  if (j.note != null) {
+    const t = j.note.trim();
+    if (t) d.note = t; else delete d.note;
+  }
+}
+
+// 입력 중인 일기 한 줄 (다듬지 않고 그대로 둔다)
+export function writeNote(s: State, key: string, text: string) {
+  const d = getDay(s, key);
+  if (text) d.note = text; else delete d.note;
+}
+
+// ---- 맡기기 ----
+export interface NewItem { text: string; due?: number; travel?: number; audio?: AudioRef }
+export function addItem(s: State, n: NewItem, now: number): Item {
+  const it: Item = { id: uid(), text: n.text.trim() || (n.audio ? '음성 메모' : ''), at: now, status: 'inbox' };
+  if (n.due != null) { it.due = n.due; if (n.travel) it.travel = n.travel; }
+  if (n.audio) it.audio = n.audio;
+  s.items.unshift(it);
+  return it;
+}
+const find = (s: State, id: string) => s.items.find((i) => i.id === id);
+
+export function resolveItem(s: State, id: string, status: 'done' | 'dropped' | 'inbox', now: number) {
+  const i = find(s, id);
+  if (!i) return;
+  i.status = status;
+  if (status === 'inbox') delete i.doneAt; else i.doneAt = now;
+  delete i.snooze;
+}
+export function snoozeItem(s: State, id: string, until: number) {
+  const i = find(s, id);
+  if (i) i.snooze = until;
+}
+// 저녁 정리의 대답
+export function triageItem(s: State, id: string, choice: 'tomorrow' | 'later' | 'keep' | 'drop', now: number) {
+  const i = find(s, id);
+  if (!i) return;
+  if (choice === 'tomorrow') i.due = tomorrowSlot(s, now);
+  else if (choice === 'later') i.defer = now + 3 * 86_400_000;
+  else if (choice === 'keep') i.keep = true;
+  else removeItem(s, id);
+}
+export function removeItem(s: State, id: string) {
+  s.items = s.items.filter((i) => i.id !== id);
 }
